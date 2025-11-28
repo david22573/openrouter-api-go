@@ -1,6 +1,7 @@
 package openrouter
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,45 +10,104 @@ import (
 	"net/http"
 )
 
-func (c *Client) Chat(ctx context.Context, prompt string) (*ChatResponse, error) {
-	reqBody := ChatRequest{
-		Model:  "openrouter/auto", // could be configurable
-		Prompt: prompt,
-	}
+// CreateChatCompletion sends a request to the chat completions endpoint.
+// This is for non-streaming requests.
+func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+	req.Stream = false // Force stream to false for this method
 
-	b, err := json.Marshal(reqBody)
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/chat/completions", req)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		c.BaseURL+"/v1/chat/completions",
-		bytes.NewReader(b),
-	)
+	var resp ChatCompletionResponse
+	if err := c.sendRequest(httpReq, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+// -----------------------------------------------------------------------------
+// Streaming Support
+// -----------------------------------------------------------------------------
+
+// ChatCompletionStream manages the stream of responses.
+type ChatCompletionStream struct {
+	reader *bufio.Reader
+	body   io.Closer
+}
+
+// Recv returns the next response from the stream.
+// Returns io.EOF when the stream is finished.
+func (s *ChatCompletionStream) Recv() (*ChatCompletionResponse, error) {
+	for {
+		// Read line by line (SSE format)
+		line, err := s.reader.ReadBytes('\n')
+		if err != nil {
+			return nil, err
+		}
+
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+
+		// SSE lines start with "data: "
+		if !bytes.HasPrefix(line, []byte("data: ")) {
+			continue
+		}
+
+		// Remove the prefix
+		data := bytes.TrimPrefix(line, []byte("data: "))
+
+		// Check for the [DONE] signal
+		if string(data) == "[DONE]" {
+			return nil, io.EOF
+		}
+
+		var response ChatCompletionResponse
+		if err := json.Unmarshal(data, &response); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal stream data: %w", err)
+		}
+
+		// OpenRouter (and OpenAI) sometimes send keep-alive comments or empty updates
+		// We return valid structs, but empty ones might be filtered by the caller if desired.
+		return &response, nil
+	}
+}
+
+// Close closes the underlying response body.
+func (s *ChatCompletionStream) Close() error {
+	return s.body.Close()
+}
+
+// CreateChatCompletionStream sends a request to the chat completions endpoint with streaming enabled.
+func (c *Client) CreateChatCompletionStream(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionStream, error) {
+	req.Stream = true // Force stream to true
+
+	httpReq, err := c.newRequest(ctx, http.MethodPost, "/chat/completions", req)
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
+	// We use c.httpClient.Do directly here because we need to keep the body open
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("http error: %w", err)
+		return nil, fmt.Errorf("failed to execute stream request: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("api error: %d: %s", resp.StatusCode, string(body))
+		defer resp.Body.Close()
+		var errResp ErrorResponse
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&errResp); decodeErr == nil && errResp.Error.Message != "" {
+			return nil, fmt.Errorf("api error (status %d): %s - %s", resp.StatusCode, errResp.Error.Type, errResp.Error.Message)
+		}
+		return nil, fmt.Errorf("api error (status %d)", resp.StatusCode)
 	}
 
-	var out ChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode error: %w", err)
-	}
-
-	return &out, nil
+	return &ChatCompletionStream{
+		reader: bufio.NewReader(resp.Body),
+		body:   resp.Body,
+	}, nil
 }

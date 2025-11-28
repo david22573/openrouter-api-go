@@ -23,11 +23,7 @@ var rootCmd = &cobra.Command{
 		}
 		app.A.Config = cfg
 
-		c, err := openrouter.NewClient(cfg.APIKey)
-		if err != nil {
-			return fmt.Errorf("failed to initialize client: %w", err)
-		}
-		app.A.Client = c
+		app.A.Client = openrouter.NewClient(cfg.APIKey)
 
 		return nil
 	},

@@ -31,5 +31,5 @@ go.work.sum
 # .idea/
 # .vscode/
 
-./openrouter-api-go
+openrouter-api-go
 bin/
