@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultModel = "nousresearch/nous-hermes-2-mixtral-8x7b-dpo"
+const defaultModel = "tngtech/tng-r1t-chimera:free"
 
 var modelID string
 
