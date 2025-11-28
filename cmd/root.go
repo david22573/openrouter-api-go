@@ -2,38 +2,43 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/david22573/openrouter-api-go/internal/app"
 	"github.com/david22573/openrouter-api-go/internal/config"
+	"github.com/david22573/openrouter-api-go/pkg/openrouter"
 	"github.com/spf13/cobra"
 )
 
+// rootCmd is the base command.
 var rootCmd = &cobra.Command{
 	Use:   "openrouter",
 	Short: "CLI for interacting with the OpenRouter API",
-	Long:  "A Go CLI for sending prompts and managing messages via the OpenRouter API.",
+	Long:  "A command-line interface for sending prompts and managing messages via the OpenRouter API.",
+
+	// This runs before *every* command.
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		app.A.Config = cfg
+
+		c, err := openrouter.NewClient(cfg.APIKey)
+		if err != nil {
+			return fmt.Errorf("failed to initialize client: %w", err)
+		}
+		app.A.Client = c
+
+		return nil
+	},
 }
 
-// cfg holds the loaded config (API key, etc.)
-var cfg *config.Config
-
-// Execute runs the CLI
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+// Execute runs the CLI.
+func Execute() error {
+	return rootCmd.Execute()
 }
 
 func init() {
-	// Load configuration on startup
-	var err error
-	cfg, err = config.LoadConfig()
-	if err != nil {
-		fmt.Println("Error loading config:", err)
-		os.Exit(1)
-	}
-
-	// Add other subcommands here if needed
-	// chatCmd is added inside cmd/chat.go
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
 }

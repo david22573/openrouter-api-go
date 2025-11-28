@@ -2,58 +2,32 @@ package openrouter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 )
 
-type ChatMessage struct {
-	Role    string `json:"role"`    // "user" or "assistant"
-	Content string `json:"content"` // message text
-}
-
-// ExtraBody for advanced features like reasoning
-type ExtraBody struct {
-	Reasoning struct {
-		Enabled bool `json:"enabled"`
-	} `json:"reasoning"`
-}
-
-// ChatRequest mirrors OpenRouter /chat/completions body
-type ChatRequest struct {
-	Model     string        `json:"model"`
-	Messages  []ChatMessage `json:"messages"`
-	ExtraBody *ExtraBody    `json:"extra_body,omitempty"`
-}
-
-// ChatResponse minimal fields
-type ChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Output  []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	} `json:"output"`
-}
-
-// Chat sends a prompt to OpenRouter and returns the assistant's reply
-func (c *Client) Chat(model string, messages []ChatMessage, extra *ExtraBody) (string, error) {
+func (c *Client) Chat(ctx context.Context, prompt string) (*ChatResponse, error) {
 	reqBody := ChatRequest{
-		Model:     model,
-		Messages:  messages,
-		ExtraBody: extra,
+		Model:  "openrouter/auto", // could be configurable
+		Prompt: prompt,
 	}
 
-	data, err := json.Marshal(reqBody)
+	b, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.BaseURL+"/chat/completions", bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.BaseURL+"/v1/chat/completions",
+		bytes.NewReader(b),
+	)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("build request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -61,23 +35,19 @@ func (c *Client) Chat(model string, messages []ChatMessage, extra *ExtraBody) (s
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("http error: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API error (%d): %s", resp.StatusCode, string(bodyBytes))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("api error: %d: %s", resp.StatusCode, string(body))
 	}
 
-	var chatResp ChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return "", err
+	var out ChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode error: %w", err)
 	}
 
-	if len(chatResp.Output) == 0 {
-		return "", fmt.Errorf("empty response from OpenRouter")
-	}
-
-	return chatResp.Output[0].Content, nil
+	return &out, nil
 }
