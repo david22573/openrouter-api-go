@@ -45,7 +45,7 @@ func runChat(cmd *cobra.Command, args []string) {
 
 	// Initialize the client
 	client := openrouter.NewClient(apiKey,
-		openrouter.WithReferer("https://github.com/your-org/your-app"), // Replace with your actual referer
+		openrouter.WithReferer("https://github.com/david22573/openrouter-api-go"), // Replace with your actual referer
 		openrouter.WithTitle("OpenRouter CLI Chat"),
 	)
 
