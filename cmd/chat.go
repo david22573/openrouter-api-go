@@ -8,11 +8,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/david22573/openrouter-api-go/internal/app"
 	"github.com/david22573/openrouter-api-go/pkg/openrouter"
 	"github.com/spf13/cobra"
 )
 
-const defaultModel = "tngtech/tng-r1t-chimera:free"
+var defaultModel string
 
 var modelID string
 
@@ -30,26 +31,29 @@ Example:
 }
 
 func init() {
-	rootCmd.AddCommand(chatCmd)
+	// will be replaced in PersistentPreRunE
+	defaultModel = "tngtech/tng-r1t-chimera:free"
 
-	// Define the model flag
-	chatCmd.Flags().StringVarP(&modelID, "model", "m", defaultModel, "The model ID to use for the chat session")
+	rootCmd.AddCommand(chatCmd)
+	chatCmd.Flags().StringVarP(&modelID, "model", "m", "", "Model ID")
 }
 
 func runChat(cmd *cobra.Command, args []string) {
-	apiKey := os.Getenv("OPENROUTER_API_KEY")
-	if apiKey == "" {
-		fmt.Println("Error: OPENROUTER_API_KEY environment variable not set.")
-		os.Exit(1)
+	// 1. Determine model by priority
+	//    flag → config → hard default
+	if cmd.Flags().Changed("model") {
+		// modelID already set
+	} else if app.A.Config.Model != "" {
+		modelID = app.A.Config.Model
+	} else {
+		modelID = "tngtech/tng-r1t-chimera:free"
 	}
 
-	// Initialize the client
-	client := openrouter.NewClient(apiKey,
-		openrouter.WithReferer("https://github.com/david22573/openrouter-api-go"), // Replace with your actual referer
-		openrouter.WithTitle("OpenRouter CLI Chat"),
-	)
+	fmt.Println("Using model:", modelID)
 
+	client := app.A.Client // Already initialized in root.go
 	// Initialize chat history
+
 	messages := make([]openrouter.ChatMessage, 0)
 
 	fmt.Printf("Starting chat with model: %s\n", modelID)
