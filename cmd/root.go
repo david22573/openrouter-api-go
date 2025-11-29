@@ -23,7 +23,10 @@ var rootCmd = &cobra.Command{
 		}
 		app.A.Config = cfg
 
-		app.A.Client = openrouter.NewClient(cfg.APIKey)
+		app.A.Client = openrouter.NewClient(cfg.APIKey,
+			openrouter.WithReferer("https://github.com/david22573/openrouter-api-go"), // Replace with your actual referer
+			openrouter.WithTitle("OpenRouter CLI Chat"),
+		)
 
 		return nil
 	},
