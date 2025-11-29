@@ -34,8 +34,8 @@ func init() {
 	// will be replaced in PersistentPreRunE
 	defaultModel = "tngtech/tng-r1t-chimera:free"
 
-	rootCmd.AddCommand(chatCmd)
 	chatCmd.Flags().StringVarP(&modelID, "model", "m", "", "Model ID")
+	rootCmd.AddCommand(chatCmd)
 }
 
 func runChat(cmd *cobra.Command, args []string) {
